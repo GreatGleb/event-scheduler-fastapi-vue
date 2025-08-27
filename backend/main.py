@@ -1,10 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List
+import httpx
+import greenstalk
 
 import models
 from database import engine, get_db
@@ -36,21 +37,36 @@ class EventOut(BaseModel):
         from_attributes = True
 
 
-
 @app.post("/api/events", response_model=EventOut)
 async def create_event(event: EventCreate, db: AsyncSession = Depends(get_db)):
     db_event = models.Event(**event.dict())
     db.add(db_event)
     await db.commit()
     await db.refresh(db_event)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post("https://httpbin.org/post", json={
+                "title": db_event.title,
+                "datetime": db_event.event_time.isoformat()
+            })
+    except httpx.RequestError as exc:
+        print(f"Error calling httpbin: {exc}")
+
+    try:
+        queue = greenstalk.Client(('beanstalkd', 11300))
+        queue.put(str(db_event.id))
+        queue.close()
+    except Exception as e:
+        print(f"Could not put job in queue: {e}")
+
     return db_event
 
 
 @app.get("/api/events", response_model=List[EventOut])
 async def read_events(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(models.Event).offset(skip).limit(limit))
-    events = result.scalars().all()
-    return events
+    return result.scalars().all()
 
 
 @app.patch("/api/events/{event_id}", response_model=EventOut)

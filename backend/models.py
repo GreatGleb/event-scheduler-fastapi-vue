@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLAlchemyEnum
+from sqlalchemy import Column, Integer, String, Enum as SQLAlchemyEnum
+from sqlalchemy.types import DateTime
 from database import Base
 import enum
 
@@ -12,5 +13,5 @@ class Event(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     description = Column(String)
-    event_time = Column(DateTime)
+    event_time = Column(DateTime(timezone=True))
     status = Column(SQLAlchemyEnum(EventStatus), default=EventStatus.PENDING)
